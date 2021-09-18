@@ -9,6 +9,8 @@ jobs:
                 uses: actions/checkout@v1
 
             -   name: GolangCI-Lint Action
-                uses: matoous/golangci-lint-action@v1.23.3
+                uses: matoous/golangci-lint-action@v2
                 with:
                     config: .golangci.yml
+                    version: latest
+                    only-new-issues: true
