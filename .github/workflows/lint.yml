@@ -13,3 +13,4 @@ jobs:
                 with:
                     version: latest
                     only-new-issues: true
+                    args: --issues-exit-code=0
