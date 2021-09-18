@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"os"
 
 	"github.com/Fishwaldo/go-taskmanager/utils"
 )
@@ -24,8 +25,8 @@ type Logger interface {
 
 //DefaultLogger uses Golang Standard Logging Libary
 func DefaultLogger() (l *StdLogger) {
-	stdlog := &StdLogger{Log: *log.Default(), keys: make(map[string]interface{})}
-	stdlog.Log.SetPrefix("sched  - ")
+	stdlogger := log.New(os.Stderr, "sched  - ", log.LstdFlags)
+	stdlog := &StdLogger{Log: *stdlogger, keys: make(map[string]interface{})}
 	return stdlog
 }
 
