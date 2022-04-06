@@ -40,7 +40,7 @@ func (hth *ConcurrentJobBlocker) PreHandler(s *taskmanager.Task) (taskmanager.MW
 	defer hth.mx.Unlock()
 	cjl := hth.getTagCtx(s)
 	if cjl != nil {
-		s.Logger.Debug("Concurrent Job Lock is %t", cjl.running)
+		s.Logger.V(1).Info("Concurrent Job Lock", "locked", cjl.running)
 		if cjl.running {
 			metrics.IncrCounterWithLabels(schedmetrics.GetMetricsCounterKey(schedmetrics.Metrics_Counter_MW_ConcurrentJob_Blocked), 1, []metrics.Label{{Name: "id", Value: s.GetID()}})
 			return taskmanager.MWResult{Result: taskmanager.MWResult_Defer}, joberrors.FailedJobError{Message: "Job Already Running", ErrorType: joberrors.Error_ConcurrentJob}
@@ -57,9 +57,9 @@ func (hth *ConcurrentJobBlocker) PostHandler(s *taskmanager.Task, err error) tas
 	defer hth.mx.Unlock()
 	cjl := hth.getTagCtx(s)
 	if cjl != nil {
-		s.Logger.Debug("Concurrent Job Lock is %t", cjl.running)
+		s.Logger.V(1).Info("Concurrent Job Lock", "locked", cjl.running)
 		if !cjl.running {
-			s.Logger.Warn("Job Was Not Locked")
+			s.Logger.Info("Job Was Not Locked")
 			return taskmanager.MWResult{Result: taskmanager.MWResult_NextMW}
 		} else {
 			cjl.running = false

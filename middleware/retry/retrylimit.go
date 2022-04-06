@@ -42,17 +42,17 @@ func (ebh *RetryCountLimit) Handler(s *taskmanager.Task, prerun bool, e error) (
 	defer ebh.mx.Unlock()
 	bo, ok := ebh.getCtx(s)
 	if !ok {
-		s.Logger.Error("RetryCountLimit Not Reset/Initialzied")
+		s.Logger.Error(nil, "RetryCountLimit Not Reset/Initialzied")
 		return taskmanager.RetryResult{Result: taskmanager.RetryResult_NextMW}, joberrors.FailedJobError{ErrorType: joberrors.Error_Middleware, Message: "RetryCountLimit Not Reset/Initialzied"}
 	}
 	if ebh.shouldHandleState(e) {
 		bo.attempts++
 		if bo.attempts > ebh.max {
-			s.Logger.Warn("Exceeded Max Number of Attempts: %d (%d limit)", bo.attempts, ebh.max)
+			s.Logger.Info("Exceeded Max Number of Attempts", "attempts", bo.attempts, "limit", ebh.max)
 			metrics.IncrCounterWithLabels(schedmetrics.GetMetricsCounterKey(schedmetrics.Metrics_Counter_MW_RetryLimit_Hit), 1, []metrics.Label{{Name: "id", Value: s.GetID()}})
 			return taskmanager.RetryResult{Result: taskmanager.RetryResult_NoRetry}, nil
 		} else {
-			s.Logger.Info("Retrying Job: Attempt %d - %d limit", bo.attempts, ebh.max)
+			s.Logger.Info("Retrying Job", "attempts", bo.attempts, "limit", ebh.max)
 			return taskmanager.RetryResult{Result: taskmanager.RetryResult_NextMW}, nil
 		}
 	}

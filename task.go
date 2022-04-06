@@ -10,7 +10,7 @@ import (
 
 	"github.com/armon/go-metrics"
 	"github.com/sasha-s/go-deadlock"
-
+	"github.com/go-logr/logr"
 	"github.com/Fishwaldo/go-taskmanager/job"
 	"github.com/Fishwaldo/go-taskmanager/joberrors"
 	schedmetrics "github.com/Fishwaldo/go-taskmanager/metrics"
@@ -102,7 +102,7 @@ type Task struct {
 	wg sync.WaitGroup
 
 	// Logging Interface
-	Logger Logger
+	Logger logr.Logger
 
 	// Lock the Schedule Structure for Modifications
 	mx deadlock.RWMutex
@@ -131,7 +131,7 @@ func NewSchedule(ctx context.Context, id string, timer Timer, jobFunc func(conte
 		jobSrcFunc:             jobFunc,
 		timer:                  timer,
 		activeJobs:             *newJobMap(),
-		Logger:                 options.logger.With("id", id),
+		Logger:                 options.logger.WithValues("taskid", id),
 		executationMiddleWares: options.executationmiddlewares,
 		retryMiddlewares:       options.retryMiddlewares,
 		Ctx:                    ctx,
@@ -164,11 +164,11 @@ func (s *Task) Start() {
 	s.stopScheduleSignal = make(chan interface{}, 1)
 
 	for _, mw := range s.executationMiddleWares {
-		s.Logger.Trace("Initilized %T Executation Middleware", mw)
+		s.Logger.V(1).Info("Initilized Executation Middleware", "middleware", mw)
 		mw.Initilize(s)
 	}
 	for _, mw := range s.retryMiddlewares {
-		s.Logger.Trace("Initilized %T Retry Middleware", mw)
+		s.Logger.V(1).Info("Initilized Retry Middleware", "middleware", mw)
 		mw.Initilize(s)
 	}
 
@@ -194,25 +194,24 @@ func (s *Task) Stop() {
 
 	// Print No. of Active Jobs
 	if noOfActiveJobs := s.activeJobs.len(); s.activeJobs.len() > 0 {
-		s.Logger.Info("Waiting for '%d' active jobs still running...", noOfActiveJobs)
+		s.Logger.Info("Waiting for active jobs still running...", "jobs", noOfActiveJobs)
 	}
 
 	s.wg.Wait()
 	s.Logger.Info("Job Schedule Stopped")
 	metrics.SetGaugeWithLabels(schedmetrics.GetMetricsGaugeKey(schedmetrics.Metrics_Guage_Up), 0, []metrics.Label{{Name: "id", Value: s.id}})
-	s.Logger.Sync()
 	close(s.stopScheduleSignal)
 }
 
 func (s *Task) runPreExecutationMiddlware() (MWResult, error) {
 	for _, middleware := range s.executationMiddleWares {
-		s.Logger.Trace("Running Handler %T", middleware)
+		s.Logger.V(1).Info("Running Handler", "middleware", middleware)
 		metrics.IncrCounterWithLabels(schedmetrics.GetMetricsCounterKey(schedmetrics.Metrics_Counter_PreExecutationRuns), 1, []metrics.Label{{Name: "id", Value: s.id}, {Name: "middleware", Value: fmt.Sprintf("%T", middleware)}})
 		result, err := middleware.PreHandler(s)
 		if err != nil {
-			s.Logger.With("Result", result).Warn("Middleware %T Returned Error: %s", middleware, err.Error())
+			s.Logger.Error(err, "Middleware Returned Error", "middleware", middleware, "result", result)
 		} else {
-			s.Logger.With("Result", result).Info("Middleware %T Returned No Error", middleware)
+			s.Logger.Info("Middleware Returned No Error", "middleware", middleware, "result", result)
 		}
 
 		switch result.Result {
@@ -230,21 +229,21 @@ func (s *Task) runPreExecutationMiddlware() (MWResult, error) {
 
 func (s *Task) runRetryMiddleware(prerun bool, err error) {
 	for _, retrymiddleware := range s.retryMiddlewares {
-		s.Logger.Trace("Running Retry Middleware %T", retrymiddleware)
+		s.Logger.V(1).Info("Running Retry Middleware", "middleware", retrymiddleware)
 		metrics.IncrCounterWithLabels(schedmetrics.GetMetricsCounterKey(schedmetrics.Metrics_Counter_PreRetryRuns), 1, []metrics.Label{{Name: "id", Value: s.id}, {Name: "middleware", Value: fmt.Sprintf("%T", retrymiddleware)}, {Name: "Prerun", Value: strconv.FormatBool(prerun)}})
 
 		retryops, _ := retrymiddleware.Handler(s, prerun, err)
 
 		switch retryops.Result {
 		case RetryResult_Retry:
-			s.Logger.Debug("Retry Middleware %T Delayed Job %d", retrymiddleware, retryops.Delay)
+			s.Logger.V(1).Info("Retry Middleware Delayed Job", "middleware", retrymiddleware, "duration", retryops.Delay)
 			metrics.IncrCounterWithLabels(schedmetrics.GetMetricsCounterKey(schedmetrics.Metrics_Counter_PreRetryRetries), 1, []metrics.Label{{Name: "id", Value: s.id}, {Name: "middleware", Value: fmt.Sprintf("%T", retrymiddleware)}, {Name: "Prerun", Value: strconv.FormatBool(prerun)}})
 			s.retryJob(retryops.Delay)
 		case RetryResult_NoRetry:
-			s.Logger.Debug("Retry Middleware %T Canceled Retries", retrymiddleware)
+			s.Logger.V(1).Info("Retry Middleware Canceled Retries", "middleware", retrymiddleware)
 			metrics.IncrCounterWithLabels(schedmetrics.GetMetricsCounterKey(schedmetrics.Metrics_Counter_PreRetryResets), 1, []metrics.Label{{Name: "id", Value: s.id}, {Name: "middleware", Value: fmt.Sprintf("%T", retrymiddleware)}, {Name: "Prerun", Value: strconv.FormatBool(prerun)}})
 		case RetryResult_NextMW:
-			s.Logger.Debug("Retry Middleware %T Skipped", retrymiddleware)
+			s.Logger.V(1).Info("Retry Middleware Skipped", "middleware", retrymiddleware)
 			metrics.IncrCounterWithLabels(schedmetrics.GetMetricsCounterKey(schedmetrics.Metrics_Counter_PreRetrySkips), 1, []metrics.Label{{Name: "id", Value: s.id}, {Name: "middleware", Value: fmt.Sprintf("%T", retrymiddleware)}, {Name: "Prerun", Value: strconv.FormatBool(prerun)}})
 		}
 	}
@@ -252,7 +251,7 @@ func (s *Task) runRetryMiddleware(prerun bool, err error) {
 
 func (s *Task) runPostExecutionHandler(err error) MWResult {
 	for _, postmiddleware := range s.executationMiddleWares {
-		s.Logger.Trace("Running PostHandler Middlware %T", postmiddleware)
+		s.Logger.V(1).Info("Running PostHandler Middlware", "middleware", postmiddleware)
 		metrics.IncrCounterWithLabels(schedmetrics.GetMetricsCounterKey(schedmetrics.Metrics_Counter_PostExecutationFailedRuns), 1, []metrics.Label{{Name: "id", Value: s.id}, {Name: "middleware", Value: fmt.Sprintf("%T", postmiddleware)}})
 		result := postmiddleware.PostHandler(s, err)
 		switch result.Result {
@@ -275,8 +274,8 @@ func (s *Task) runJobInstance(result chan interface{}) {
 	// Create a new instance of s.jobSrcFunc
 	jobInstance := job.NewJob(s.Ctx, s.jobSrcFunc)
 
-	joblog := s.Logger.With("Instance", jobInstance.ID())
-	joblog.Debug("Job Run Starting")
+	joblog := s.Logger.WithValues("instance", jobInstance.ID())
+	joblog.V(1).Info("Job Run Starting")
 
 	// Add to active jobs map
 	s.activeJobs.add(jobInstance)
@@ -298,16 +297,16 @@ func (s *Task) runJobInstance(result chan interface{}) {
 	// Logs and Metrics --------------------------------------
 	if lastError != nil {
 		joblog.
-			With("Duration", jobInstance.ActualElapsed().Round(1*time.Millisecond)).
-			With("State", jobInstance.State().String()).
-			With("Error", lastError.Error()).
-			Error("Job Error")
+			WithValues("duration", jobInstance.ActualElapsed().Round(1*time.Millisecond)).
+			WithValues("state", jobInstance.State().String()).
+			WithValues("error", lastError.Error()).
+			Error(lastError, "Job Error")
 		metrics.IncrCounterWithLabels([]string{"sched", "runerrors"}, 1, labels)
 		result <- lastError
 	} else {
 		joblog.
-			With("Duration", jobInstance.ActualElapsed().Round(1*time.Millisecond)).
-			With("State", jobInstance.State().String()).
+			WithValues("duration", jobInstance.ActualElapsed().Round(1*time.Millisecond)).
+			WithValues("state", jobInstance.State().String()).
 			Info("Job Finished")
 		result <- nil
 	}
@@ -322,8 +321,8 @@ func negativeToZero(nextRunDuration time.Duration) time.Duration {
 
 func (s *Task) retryJob(in time.Duration) {
 	s.Logger.
-		With("Duration", in).
-		Debug("Rescheduling Job")
+		WithValues("duration", in).
+		V(1).Info("Rescheduling Job")
 	s.timer.Reschedule(in)
 }
 
@@ -338,7 +337,7 @@ func (s *Task) Run() {
 	result, err := s.runPreExecutationMiddlware()
 	switch result.Result {
 	case MWResult_Cancel:
-		s.Logger.Warn("Scheduled Job run is Canceled")
+		s.Logger.Info("Scheduled Job run is Canceled")
 		t, _ := s.timer.Next()
 		s.nextRun.Set(t)
 		s.sendUpdateSignal(updateSignalOp_Reschedule)
@@ -360,11 +359,11 @@ func (s *Task) Run() {
 	select {
 	case result := <-jobResultSignal:
 		s.Logger.
-			With("Result", result).
+			WithValues("result", result).
 			Info("Got Job Result", "result", result)
 		err, ok := result.(joberrors.FailedJobError)
 		if ok {
-			s.Logger.Warn("Job Failed with %s", err.Error())
+			s.Logger.Error(err, "Job Failed")
 
 			metrics.IncrCounterWithLabels(schedmetrics.GetMetricsCounterKey(schedmetrics.Metrics_Counter_FailedJobs), 1, []metrics.Label{{Name: "id", Value: s.id}})
 
@@ -372,7 +371,7 @@ func (s *Task) Run() {
 
 			if mwresult.Result == MWResult_Defer {
 				/* run Retry Framework */
-				s.Logger.Debug("Post Executation Middleware Retry Request")
+				s.Logger.V(1).Info("Post Executation Middleware Retry Request")
 				s.runRetryMiddleware(false, err)
 			}
 		} else {
@@ -386,7 +385,7 @@ func (s *Task) Run() {
 }
 
 func (s *Task) sendUpdateSignal(op UpdateSignalOp_Type) {
-	s.Logger.Trace("Sending Update Signal")
+	s.Logger.V(1).Info("Sending Update Signal")
 	s.updateSignal <- updateSignalOp{id: s.id, operation: op}
-	s.Logger.Trace("Sent Update Signal")
+	s.Logger.V(1).Info("Sent Update Signal")
 }

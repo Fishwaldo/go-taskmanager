@@ -2,20 +2,19 @@ package taskmanager
 
 import (
 	"testing"
-
 )
 
-func TestOptionsLogger(t *testing.T) {
-	options := defaultTaskOptions()
-	log := DefaultLogger()
-	logop := WithLogger(log)
-	logop.apply(options)
-	switch options.logger.(type) {
-	case *StdLogger:
-	default:
-		t.Errorf("WithLogger Options Apply Failed")
-	}
-}
+// func TestOptionsLogger(t *testing.T) {
+// 	options := defaultTaskOptions()
+// 	log := DefaultLogger()
+// 	logop := WithLogger(log)
+// 	logop.apply(options)
+// 	switch options.logger.(type) {
+// 	case *StdLogger:
+// 	default:
+// 		t.Errorf("WithLogger Options Apply Failed")
+// 	}
+// }
 
 type testemw struct {
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -13,12 +12,12 @@ import (
 
 	"github.com/Fishwaldo/go-taskmanager"
 	"github.com/Fishwaldo/go-taskmanager/job"
-	logruslog "github.com/Fishwaldo/go-taskmanager/loggers/logrus"
 	prometheusConfig "github.com/Fishwaldo/go-taskmanager/metrics/prometheus"
 	executionmiddleware "github.com/Fishwaldo/go-taskmanager/middleware/executation"
 	retrymiddleware "github.com/Fishwaldo/go-taskmanager/middleware/retry"
 
-	//"github.com/armon/go-metrics"
+	"github.com/bombsimon/logrusr/v2"
+	"github.com/sirupsen/logrus"
 	"github.com/armon/go-metrics"
 	"github.com/armon/go-metrics/prometheus"
 	prom "github.com/prometheus/client_golang/prometheus"
@@ -26,6 +25,9 @@ import (
 )
 
 func main() {
+	logrusLog := logrus.New()
+	log := logrusr.New(logrusLog)
+
 	cfg := prometheus.PrometheusOpts{
 		GaugeDefinitions:   prometheusConfig.GetPrometicsGaugeConfig(),
 		CounterDefinitions: prometheusConfig.GetPrometicsCounterConfig(),
@@ -34,7 +36,7 @@ func main() {
 
 	sink, err := prometheus.NewPrometheusSinkFrom(cfg)
 	if err != nil {
-		log.Fatal("Cant Create Prometheus Sink")
+		log.Error(err, "Cant Create Prometheus Sink")
 	}
 	defer prom.Unregister(sink)
 
@@ -42,7 +44,7 @@ func main() {
 
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		log.Println(http.ListenAndServe("localhost:6060", nil))
+		log.Info(http.ListenAndServe("localhost:6060", nil).Error())
 	}()
 
 	exbomw := retrymiddleware.NewDefaultRetryExponentialBackoff()
@@ -56,7 +58,7 @@ func main() {
 	job1 := func(seconds time.Duration) func(context.Context) {
 		return func(ctx context.Context) {
 			jobrunner, _ := ctx.Value(job.JobCtxValue{}).(*job.Job)
-			log.Println("Job ", jobrunner.ID(), " Duration: ", seconds*time.Second, "\t Doing some work...")
+			log.Info("Job Running", "Job", jobrunner.ID(), "Duration", seconds*time.Second)
 			if thmw.IsHaveTag("Hello") {
 				thmw.DelHaveTags("Hello")
 			} else {
@@ -64,12 +66,12 @@ func main() {
 			}
 			select {
 			case <-ctx.Done():
-				log.Println("Job ", jobrunner.ID(), " Context Cancelled Job")
+				log.Info("Job Context Cancelled Job", "jobid", jobrunner.ID())
 			case <-time.After(time.Second * seconds):
-				log.Println("Job ", jobrunner.ID(), " Work Done")
+				log.Info("Job Work Done", "jobid", jobrunner.ID())
 			}
 			//log.Panic("Job ", jobrunner.ID(), "Pannic Test")
-			log.Println("Job ", jobrunner.ID(), "Duration: ", seconds*time.Second, "\t Finished Work.")
+			log.Info("Job Finished" , "jobid", jobrunner.ID(), "duration", seconds*time.Second)
 		}
 	}
 
@@ -78,9 +80,9 @@ func main() {
 			jobrunner, _ := ctx.Value(job.JobCtxValue{}).(*job.Job)
 			select {
 			case <-ctx.Done():
-				log.Println("NeedTagsJob ", jobrunner.ID(), " Context Cancelled Job")
+				log.Info("NeedTagsJob Context Cancelled Job", "jobid", jobrunner.ID())
 			default:
-				log.Println("NeedTagsJob ", jobrunner.ID(), "Is Running")
+				log.Info("NeedTagsJob Is Running", "jobid", jobrunner.ID())
 			}
 		}
 	}
@@ -105,14 +107,10 @@ func main() {
 		panic(fmt.Sprintf("invalid delay: %s", err.Error()))
 	}
 
-	//	logger := sched.DefaultLogger()
-	//	logger.SetLevel(sched.LOG_TRACE)
-
-	logger := logruslog.LogrusDefaultLogger()
 
 	// Create Schedule
 	scheduler := taskmanager.NewScheduler(
-		taskmanager.WithLogger(logger),
+		taskmanager.WithLogger(log.WithName("scheduler")),
 	)
 
 	//ctx1, cancel1 := context.WithCancel(context.Background())

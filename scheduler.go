@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/sasha-s/go-deadlock"
-
+	"github.com/go-logr/logr"
 	"github.com/Fishwaldo/go-taskmanager/joberrors"
 	schedmetrics "github.com/Fishwaldo/go-taskmanager/metrics"
 	"github.com/armon/go-metrics"
@@ -20,7 +20,7 @@ type Scheduler struct {
 	nextRun            timeSlice
 	mx                 deadlock.RWMutex
 	tsmx               deadlock.RWMutex
-	log                Logger
+	log                logr.Logger
 	updateScheduleChan chan updateSignalOp
 	scheduleOpts       []Option
 }
@@ -91,7 +91,7 @@ func (s *Scheduler) Add(ctx context.Context, id string, timer Timer, job func(co
 	s.tasks[id] = schedule
 	metrics.SetGauge(schedmetrics.GetMetricsGaugeKey(schedmetrics.Metrics_Guage_Jobs), float32(len(s.tasks)))
 
-	s.log.Info("Added New Job %s", schedule.GetID())
+	s.log.Info("Added New Job", "jobid", schedule.GetID())
 	return nil
 }
 
@@ -109,7 +109,7 @@ func (s *Scheduler) Start(id string) error {
 	schedule.Start()
 	s.mx.Unlock()
 	s.addScheduletoRunQueue(schedule)
-	s.log.Info("Start Job %s", schedule.GetID())
+	s.log.Info("Start Job", "jobid", schedule.GetID())
 	return nil
 }
 
@@ -185,7 +185,7 @@ func (s *Scheduler) getNextJob() *Task {
 	}
 	for _, sched := range s.nextRun {
 		if sched.nextRun.Get().IsZero() {
-			s.log.Info("NextRun for %s is Zero", sched.id)
+			s.log.Info("NextRun is Zero", "jobid", sched.GetID())
 			continue
 		}
 		return sched
@@ -200,7 +200,7 @@ func (s *Scheduler) scheduleLoop() {
 		nextjob := s.getNextJob()
 		if nextjob != nil {
 			nextRun = nextjob.GetNextRun()
-			s.log.Info("Next Scheduler Run is at %s for %s", time.Until(nextRun), nextjob.GetID())
+			s.log.Info("Next Scheduler Run", "next", time.Until(nextRun), "jobid", nextjob.GetID())
 			nextRunChan = time.After(time.Until(nextRun))
 		} else {
 			s.log.Info("No Jobs Scheduled")
@@ -209,19 +209,19 @@ func (s *Scheduler) scheduleLoop() {
 		select {
 		case <-nextRunChan:
 			if nextjob != nil {
-				s.log.Info("Dispatching Job %s", nextjob.id)
+				s.log.Info("Dispatching Job", "jobid", nextjob.id)
 				nextjob.nextRun.Set(time.Time{})
 				go nextjob.Run()
 			} else {
-				s.log.Error("nextjob is Nil")
+				s.log.Error(nil, "nextjob is Nil")
 			}
 		case op := <-s.updateScheduleChan:
 			switch op.operation {
 			case updateSignalOp_Reschedule:
-				s.log.Info("recalcSchedule Triggered from %s", op.id)
+				s.log.Info("recalcSchedule Triggered", "operation", op.id)
 				s.updateNextRun()
 			default:
-				s.log.Warn("Unhandled updateSignalOp Recieved")
+				s.log.Error(nil, "Unhandled updateSignalOp Recieved")
 			}
 		}
 	}
@@ -233,7 +233,7 @@ func (s *Scheduler) updateNextRun() {
 	defer s.tsmx.Unlock()
 	sort.Sort(s.nextRun)
 	for _, job := range s.nextRun {
-		s.log.Info("Next Run %s: %s", job.GetID(), job.GetNextRun().Format(time.RFC1123))
+		s.log.Info("Next Run", "jobid", job.GetID(), "when", job.GetNextRun().Format(time.RFC1123))
 	}
 }
 
@@ -241,9 +241,9 @@ func (s *Scheduler) addScheduletoRunQueue(schedule *Task) {
 	s.tsmx.Lock()
 	defer s.tsmx.Unlock()
 	s.nextRun = append(s.nextRun, schedule)
-	s.log.Info("addScheduletoRunQueue %s", schedule.GetID())
+	s.log.Info("addScheduletoRunQueue", "jobid", schedule.GetID())
 	for _, job := range s.nextRun {
-		s.log.Info("Job Run Queue: %s: %s", job.GetID(), job.GetNextRun().Format(time.RFC1123))
+		s.log.Info("Job Run Queue", "jobid", job.GetID(), "when", job.GetNextRun().Format(time.RFC1123))
 	}
 	s.updateScheduleChan <- updateSignalOp{operation: updateSignalOp_Reschedule, id: schedule.id}
 }

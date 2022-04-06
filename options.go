@@ -1,27 +1,30 @@
 package taskmanager
 
 import (
-
+	"log"
+	"os"
+	"github.com/go-logr/logr"
+	"github.com/go-logr/stdr"
 )
 
 type taskoptions struct {
-	logger              Logger
+	logger              logr.Logger
 	executationmiddlewares []ExecutionMiddleWare
 	retryMiddlewares	   []RetryMiddleware
 }
 
 
 func defaultTaskOptions() *taskoptions {
-	logger := DefaultLogger()
+	logsink := log.New(os.Stdout, "", 0);
 	return &taskoptions{
-		logger:       logger,
+		logger:       stdr.New(logsink),
 	}
 }
 
 func defaultSchedOptions() *taskoptions {
-	logger := DefaultLogger()
+	logsink := log.New(os.Stdout, "", 0);
 	return &taskoptions {
-		logger: 	logger,
+		logger: 	stdr.New(logsink),
 	}
 }
 
@@ -32,7 +35,7 @@ type Option interface {
 }
 
 type loggerOption struct {
-	Logger Logger
+	Logger logr.Logger
 }
 
 func (l loggerOption) apply(opts *taskoptions) {
@@ -40,7 +43,7 @@ func (l loggerOption) apply(opts *taskoptions) {
 }
 
 //WithLogger Use the supplied Logger as the logger.
-func WithLogger(logger Logger) Option {
+func WithLogger(logger logr.Logger) Option {
 	return loggerOption{Logger: logger}
 }
 

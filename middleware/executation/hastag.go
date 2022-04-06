@@ -72,19 +72,20 @@ func (hth *HasTagHandler) IsRequiredTag(tag string) bool {
 // Handler Runs the Tag Handler before a job is dispatched.
 func (hth *HasTagHandler) PreHandler(s *taskmanager.Task) (taskmanager.MWResult, error) {
 	s.Logger.
-		With("Present", hth.haveTags).
-		With("Required", hth.requiredTags).
-		Debug("Checking Tags")
+		WithValues("present", hth.haveTags).
+		WithValues("required", hth.requiredTags).
+		V(1).
+		Info("Checking Tags")
 	for k := range hth.requiredTags {
 		if !(hth.IsHaveTag(k)) {
 			s.Logger.
-				With("Tag", k).
-				Warn("Missing Tag")
+				WithValues("tag", k).
+				Info("Missing Tag")
 			metrics.IncrCounterWithLabels(schedmetrics.GetMetricsCounterKey(schedmetrics.Metrics_Counter_MW_HasTags_Blocked), 1, []metrics.Label{{Name: "id", Value: s.GetID()}})
 			return taskmanager.MWResult{Result: taskmanager.MWResult_Defer}, joberrors.FailedJobError{Message: "Missing Tag", ErrorType: joberrors.Error_DeferedJob}
 		} else {
 			s.Logger.
-				With("Tag", k).
+				WithValues("tag", k).
 				Info("Tag Present")
 		}
 	}

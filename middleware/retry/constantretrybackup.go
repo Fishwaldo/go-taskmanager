@@ -40,7 +40,7 @@ func (ebh *RetryConstantBackoff) Handler(s *taskmanager.Task, prerun bool, e err
 	defer ebh.mx.Unlock()
 	bo, ok := ebh.getCtx(s)
 	if !ok {
-		s.Logger.Error("RetryConstantBackoff Not Reset/Initialzied")
+		s.Logger.Error(nil, "RetryConstantBackoff Not Reset/Initialzied")
 		return taskmanager.RetryResult{Result: taskmanager.RetryResult_NextMW}, joberrors.FailedJobError{ErrorType: joberrors.Error_Middleware, Message: "RetryConstantBackoff Not Reset/Initialzied"}
 	}
 	if ebh.shouldHandleState(e) {

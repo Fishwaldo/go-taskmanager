@@ -39,7 +39,7 @@ func (ebh *RetryExponentialBackoff) Handler(s *taskmanager.Task, prerun bool, e 
 	defer ebh.mx.Unlock()
 	bo, ok := ebh.getCtx(s)
 	if !ok {
-		s.Logger.Error("RetryExponentialBackoff Not Reset/Initialzied")
+		s.Logger.Error(nil, "RetryExponentialBackoff Not Reset/Initialzied")
 		return taskmanager.RetryResult{Result: taskmanager.RetryResult_NextMW}, joberrors.FailedJobError{ErrorType: joberrors.Error_Middleware, Message: "RetryExponentialBackoff Not Reset/Initialzied"}
 	}
 	if ebh.shouldHandleState(e) {
